@@ -1,52 +1,70 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const { MongoClient, ObjectId } = require('mongodb');
+
 const app = express();
 const port = 3000;
 
 app.use(bodyParser.json());
 
-let tasks = [];
+// Conectar ao MongoDB
+const uri = '<sua-string-de-conexao>';
+const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
 
-app.get('/tasks', (req, res) => {
-    res.json(tasks);
+let tasksCollection;
+
+client.connect((err) => {
+  if (err) {
+    console.error('Erro ao conectar ao MongoDB:', err);
+    return;
+  }
+
+  console.log('Conectado ao MongoDB');
+  const db = client.db('seuBancoDeDados');
+  tasksCollection = db.collection('tasks');
 });
 
-app.post('/tasks', (req, res) => {
-    const newTask = req.body;
-    tasks.push(newTask);
-    res.json(newTask);
+app.get('/tasks', async (req, res) => {
+  const tasks = await tasksCollection.find({}).toArray();
+  res.json(tasks);
 });
 
-app.put('/tasks/:id', (req, res) => {
-    const taskId = req.params.id;
-    const updatedTask = req.body;
-
-    const taskIndex = tasks.findIndex(task => task.id === taskId);
-
-    if (taskIndex !== -1) {
-        tasks[taskIndex] = { ...tasks[taskIndex], ...updatedTask };
-
-        res.json(tasks[taskIndex]);
-    } else {
-        res.status(404).json({ error: 'Tarefa não encontrada.' });
-    }
+app.post('/tasks', async (req, res) => {
+  const newTask = req.body;
+  const result = await tasksCollection.insertOne(newTask);
+  newTask._id = result.insertedId;
+  res.json(newTask);
 });
 
-app.delete('/tasks/:id', (req, res) => {
-    const taskId = req.params.id;
+app.put('/tasks/:id', async (req, res) => {
+  const taskId = req.params.id;
+  const updatedTask = req.body;
 
-    const taskIndex = tasks.findIndex(task => task.id === taskId);
+  const result = await tasksCollection.findOneAndUpdate(
+    { _id: ObjectId(taskId) },
+    { $set: updatedTask },
+    { returnDocument: 'after' }
+  );
 
-    if (taskIndex !== -1) {
-        const deletedTask = tasks.splice(taskIndex, 1)[0];
-
-        res.json({ message: 'Tarefa excluída com sucesso.', deletedTask });
-    } else {
-        res.status(404).json({ error: 'Tarefa não encontrada.' });
-    }
+  if (result.value) {
+    res.json(result.value);
+  } else {
+    res.status(404).json({ error: 'Tarefa não encontrada.' });
+  }
 });
 
+app.delete('/tasks/:id', async (req, res) => {
+  const taskId = req.params.id;
+
+  const result = await tasksCollection.findOneAndDelete({ _id: ObjectId(taskId) });
+
+  if (result.value) {
+    res.json({ message: 'Tarefa excluída com sucesso.', deletedTask: result.value });
+  } else {
+    res.status(404).json({ error: 'Tarefa não encontrada.' });
+  }
+});
 
 app.listen(port, () => {
-    console.log(`Servidor rodando em http://localhost:${port}`);
+  console.log(`Servidor rodando em http://localhost:${port}`);
 });
